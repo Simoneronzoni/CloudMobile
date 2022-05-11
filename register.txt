@@ -1,0 +1,50 @@
+import jwt
+import boto3
+import uuid
+import xml.etree.ElementTree as ET
+from boto3.dynamodb.conditions import Attr
+
+def lambda_handler(event, context):
+    dynamodb = boto3.resource("dynamodb")
+    table = dynamodb.Table("races")
+    name = event["queryStringParameters"]["race_name"]
+    email = event["queryStringParameters"]["email"]
+    date = event["queryStringParameters"]["race_date"]
+    token = jwt.encode(
+        payload={"name": name,"date": date}, key="secret"
+    )
+
+    try:
+        query = table.scan(FilterExpression=Attr("token").eq(token))
+    except ClientError as err:
+        logger.error(
+            "Couldn't query",
+            "token",
+            err.response["Error"]["Code"],
+            err.response["Error"]["Message"],
+        )
+        raise
+    else:
+        if int(query["Count"]) == 0:
+            raceid = str(uuid.uuid4())
+            response = table.put_item(
+                Item={
+                    "races_id": raceid,
+                    "race_name": str(name),
+                    "race_date": str(date),
+                    "email": str(email),
+                    "token": token,
+                }
+            )
+        else:
+            return {
+                "statusCode": 405,
+                "message": "The invoked method is not supported on the API 
+resource.",
+                "body":"Questo token è già presente"
+
+            }
+    return {"token": token,
+        "races_id": raceid,
+    }
+

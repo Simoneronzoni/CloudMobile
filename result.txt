@@ -1,0 +1,39 @@
+import json
+import boto3
+import xmltodict as xtd
+
+def lambda_handler(event, context):
+    
+    # id = event['queryStringParameters']['id']
+    # classResult = event['queryStringParameters']['class']
+    
+    id = 'evento2'
+    classResult = 'ME'
+    
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table('racefile')
+    response = table.scan()
+    files = response['Items']
+    for el in files:
+        if el['race_id'] == id:
+            name = el['name']
+    
+    
+    s3 = boto3.client('s3')
+    bucket = 'bucketprova12'
+  
+    response = s3.get_object(Bucket=bucket,Key=name)
+   
+    content = response['Body']
+    parsed = xtd.parse(content.read(),encoding='utf-8')
+    classes = parsed['ResultList']['ClassResult']
+    results = []
+    for c in classes:
+        if c['Class']['Name'] == classResult:
+            for r in c['PersonResult']:
+                results.append({r['Person']['Id']:[{'Person':r['Person']['Name']},{'Position':r['Result']['Position']}]})
+        
+    return {
+        'statusCode': 200,
+        'body': json.dumps(results)
+    }

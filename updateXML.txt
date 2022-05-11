@@ -1,0 +1,104 @@
+import json
+import boto3
+import xml.etree.ElementTree as ET
+from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Key
+
+def getname(event):
+    body = event['body']
+    root = ET.fromstring(body)
+    name = root.tag.split('}')[0].strip('{')
+    ns = {'xmln': name}
+    event = root.find('xmln:Event', ns)
+    key=(event.find('xmln:Name', ns).text) + '.xml'
+    return key 
+    
+def saveXml(event):
+    s3 = boto3.client('s3')
+    bucket = 'eventbucketbg'
+    path = '/tmp/gare.xml'
+    body = event['body']
+    root = ET.fromstring(body)
+    name = root.tag.split('}')[0].strip('{')
+    ns = {'xmln': name}
+    event = root.find('xmln:Event', ns)
+    key=(event.find('xmln:Name', ns).text) + '.xml'
+    f = open(path, 'w')
+    f.write(body)
+    f.close()
+    s3.upload_file(Filename=path,Bucket=bucket,Key=key)
+    return key
+    
+def controlUser(races_id,token,namefile,dynamodb):
+    table = dynamodb.Table("racefile")
+    query = 
+table.scan(FilterExpression=Attr("races_id").eq(str(races_id)))
+    if int(query["Count"]):
+        if query['Items'][0]['namefile'] == str(namefile) :
+            return 0
+    else:
+        query = table.scan(FilterExpression=Attr("namefile").eq(namefile))
+        if int(query['Count']):
+            return 1
+        else:
+            return 0   
+
+
+def lambda_handler(event, context):
+    dynamodb = boto3.resource("dynamodb")
+    table = dynamodb.Table("races")
+    token = event["queryStringParameters"]["token"]
+    query = table.scan(FilterExpression=Attr("token").eq(token))
+
+    if int(query["Count"]):
+        namefile = getname(event)
+        races_id = query['Items'][0]['races_id']
+        resultcontrol = controlUser(races_id,token,namefile,dynamodb)
+        if resultcontrol:
+            return {
+            "statusCode": 405,
+            "message": "The invoked method is not supported on the API 
+resource.",
+            "body":"Non puoi passare"
+        }
+        table = dynamodb.Table("racefile")
+        query2 = 
+table.scan(FilterExpression=Attr("races_id").eq(str(races_id)))
+        
+        if int(query["Count"]) and int(query2["Count"]) == 0:
+            namefile = saveXml(event)
+            table = dynamodb.Table("racefile")
+            response = table.put_item(
+                Item={
+                    "races_id": str(races_id),
+                    "namefile": str(namefile),
+                    "token": str(token),
+                }
+            )
+            return {
+            "statusCode": 200,
+            "body":"File inserito correttamente"
+            
+        }
+        elif int(query["Count"]) and query2['Items'][0]['namefile'] == namefile:
+            namefile = saveXml(event)
+            return {
+            "statusCode": 200,
+            "message": "The invoked method is not supported on the API resource.",
+            "body":"File sovrascritto"
+            }
+            
+        else:
+            return {
+            "statusCode": 405,
+            "message": "The invoked method is not supported on the API resource.",
+            "body":"File non consentito"
+            }
+        
+    else:
+        return {
+            "statusCode": 405,
+            "message": "The invoked method is not supported on the API 
+resource.",
+            "body":"Errore"
+        }
